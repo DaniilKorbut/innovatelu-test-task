@@ -2,9 +2,8 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.Instant;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * For implement this task focus on clear code, and make this solution as simple readable as possible
@@ -17,6 +16,8 @@ import java.util.Optional;
  */
 public class DocumentManager {
 
+    private final List<Document> storage = new ArrayList<>();
+
     /**
      * Implementation of this method should upsert the document to your storage
      * And generate unique id if it does not exist, don't change [created] field
@@ -25,8 +26,30 @@ public class DocumentManager {
      * @return saved document
      */
     public Document save(Document document) {
+        if (document == null) {
+            return null;
+        }
 
-        return null;
+        String id = document.getId() == null ? UUID.randomUUID().toString() : document.getId();
+        Instant created = document.getCreated() == null ? Instant.now() : document.getCreated();
+        if (document.getId() != null) {
+            Document existingDocument = findById(document.getId()).orElse(null);
+            if (existingDocument != null) {
+                created = existingDocument.getCreated();
+                storage.remove(existingDocument);
+            }
+        }
+
+        Document savedDocument = Document.builder()
+                .id(id)
+                .title(document.getTitle())
+                .content(document.getContent())
+                .author(document.getAuthor())
+                .created(created)
+                .build();
+
+        storage.add(savedDocument);
+        return savedDocument;
     }
 
     /**
@@ -36,8 +59,9 @@ public class DocumentManager {
      * @return list matched documents
      */
     public List<Document> search(SearchRequest request) {
-
-        return Collections.emptyList();
+        return storage.stream()
+                .filter(document -> matchesSearchRequest(request, document))
+                .collect(Collectors.toList());
     }
 
     /**
@@ -47,8 +71,52 @@ public class DocumentManager {
      * @return optional document
      */
     public Optional<Document> findById(String id) {
+        return storage.stream()
+                .filter(document -> document.getId().equals(id))
+                .findFirst();
+    }
 
-        return Optional.empty();
+    private boolean matchesSearchRequest(SearchRequest request, Document document) {
+        return isTitlePrefixed(request.titlePrefixes, document.getTitle())
+               && isContainsContents(request.containsContents, document.getContent())
+               && isAuthorPresent(request.authorIds, document.getAuthor())
+               && isCreatedWithinInterval(request.createdFrom, request.createdTo, document.getCreated());
+    }
+
+    private boolean isTitlePrefixed(List<String> titlePrefixes, String title) {
+        if (titlePrefixes == null || titlePrefixes.isEmpty()) {
+            return true;
+        }
+        if (title == null) {
+            return false;
+        }
+        return titlePrefixes.stream().anyMatch(title::startsWith);
+    }
+
+    private boolean isContainsContents(List<String> contents, String content) {
+        if (contents == null || contents.isEmpty()) {
+            return true;
+        }
+        if (content == null) {
+            return false;
+        }
+        return contents.stream().anyMatch(content::contains);
+    }
+
+    private boolean isAuthorPresent(List<String> authorIds, Author author) {
+        if (authorIds == null || authorIds.isEmpty()) {
+            return true;
+        }
+        if (author == null || author.getId() == null) {
+            return false;
+        }
+        return authorIds.contains(author.getId());
+    }
+
+    private boolean isCreatedWithinInterval(Instant createdFrom, Instant createdTo, Instant created) {
+        boolean matchCreatedFrom = createdFrom == null || (created != null && !created.isBefore(createdFrom));
+        boolean matchCreatedTo = createdTo == null || (created != null && !created.isAfter(createdTo));
+        return matchCreatedFrom && matchCreatedTo;
     }
 
     @Data
